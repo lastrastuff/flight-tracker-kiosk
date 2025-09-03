@@ -88,6 +88,29 @@ def get_flights():
         return jsonify(data)
     except requests.exceptions.RequestException as e:
         return jsonify({"error": f"API request failed: {e}"}), 500
+@app.route('/api/weather')
+@cache.memoize(timeout=600) # Cache weather for 10 minutes
+def get_weather():
+    """Fetches simple weather data for the airport."""
+    try:
+        url = f"{AERO_API_URL}/airports/{AIRPORT_CODE}/weather/observations"
+        headers = {"x-apikey": AERO_API_KEY}
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json().get("observations", [])
+        if not data:
+            return jsonify({"error": "No weather data available"}), 404
+        
+        # Extract the most recent observation
+        current_weather = data[0]
+        weather_info = {
+            "temp": current_weather.get("temp_air"),
+            "wind_speed": current_weather.get("wind_speed"),
+            "summary": current_weather.get("sky_cover_text", "")
+        }
+        return jsonify(weather_info)
+    except requests.exceptions.RequestException:
+        return jsonify({"error": "Failed to fetch weather"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

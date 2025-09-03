@@ -1,80 +1,40 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Element references
     const loader = document.getElementById('loader');
     const boardTitle = document.getElementById('board-title');
     const currentTimeSpan = document.getElementById('current-time');
+    const weatherSpan = document.getElementById('weather-text');
     const arrivalsBoard = document.getElementById('arrivals-board');
     const departuresBoard = document.getElementById('departures-board');
+    const weatherBoard = document.getElementById('weather-board');
     const arrivalsTbody = document.querySelector('#arrivals-table tbody');
     const departuresTbody = document.querySelector('#departures-table tbody');
 
+    // State variables
     let flightData = {};
     let currentView = 'arrivals';
     let scrollInterval = null;
+    let viewSwitchTimeout = null;
 
-    const REFRESH_INTERVAL = 1800000; // Fetch new data every 10 minutes
-    const SWITCH_INTERVAL = 60000;   // Switch views every 60 seconds (unused in new logic)
+    // Timers
+    const REFRESH_INTERVAL = 1800000; // 30 minutes
 
-    function updateClock() {
-        // ... (Clock function remains the same)
-    }
-
-    function createFlipText(text) {
-        // ... (createFlipText function remains the same)
-    }
-
-    function manageScrolling() {
-        // ... (Scrolling function remains the same)
-    }
-    
-    function updateTable(tbody, flights, type) {
-        // ... (Table update function remains the same)
-    }
-
-    function updateDisplay() {
-        // ... (Display update function remains the same)
-    }
-
-    function fetchAndStoreFlightData() {
-        if (!flightData.arrivals) {
-            loader.style.display = 'block';
-        }
-        fetch('/api/flights')
+    function fetchWeather() {
+        fetch('/api/weather')
             .then(response => response.json())
             .then(data => {
-                loader.style.display = 'none';
-                
-                // --- NEW: Handle "Closed" or "Error" messages ---
-                if (data.message || data.error) {
-                    const message = data.message || data.error;
-                    boardTitle.textContent = message;
-                    arrivalsTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">-</td></tr>`;
-                    departuresTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">-</td></tr>`;
-                    return; // Stop further processing
-                }
-
-                flightData = data;
-                if (!scrollInterval) {
-                     updateDisplay();
+                if (data.temp && data.wind_speed) {
+                    const tempC = parseFloat(data.temp);
+                    const tempF = Math.round((tempC * 9/5) + 32);
+                    weatherSpan.textContent = `${tempF}°F ☀️ ${data.wind_speed} MPH WIND`;
                 }
             })
-            .catch(error => {
-                loader.style.display = 'none';
-                console.error('Fetch error:', error);
-            });
+            .catch(error => console.error("Could not fetch weather:", error));
     }
 
-    function switchView() {
-        currentView = (currentView === 'arrivals') ? 'departures' : 'arrivals';
-        updateDisplay();
-    }
-    
-    // Re-pasting the full functions to be safe
     function updateClock() {
         const now = new Date();
-        const timeString = now.toLocaleTimeString('en-US', {
-            timeZone: 'America/Chicago',
-            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
-        });
+        const timeString = now.toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
         currentTimeSpan.textContent = `LOCAL TIME: ${timeString}`;
     }
 
@@ -87,21 +47,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (scrollInterval) clearInterval(scrollInterval);
         const scrollContainer = document.querySelector('.flight-boards');
         scrollContainer.scrollTo(0, 0);
-
         setTimeout(() => {
             if (scrollContainer.scrollHeight > scrollContainer.clientHeight) {
                 scrollInterval = setInterval(() => {
                     if (scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight) {
                         clearInterval(scrollInterval);
-                        setTimeout(switchView, 8000);
+                        switchView(); // Just switch, don't use a timer here
                     } else {
                         scrollContainer.scrollBy(0, 1);
                     }
                 }, 50);
             } else {
-                setTimeout(switchView, 8000);
+                switchView();
             }
-        }, 8000);
+        }, 8000); // 8-second pause at the top is implicitly handled by the switch logic
     }
     
     function updateTable(tbody, flights, type) {
@@ -122,28 +81,73 @@ document.addEventListener('DOMContentLoaded', () => {
             tbody.appendChild(row);
         });
     }
-    
+
     function updateDisplay() {
+        clearTimeout(viewSwitchTimeout);
+        if (scrollInterval) clearInterval(scrollInterval);
+        arrivalsBoard.classList.add('hidden');
+        departuresBoard.classList.add('hidden');
+        weatherBoard.classList.add('hidden');
+
         if (currentView === 'arrivals') {
             boardTitle.textContent = 'ARRIVALS';
             arrivalsBoard.classList.remove('hidden');
-            departuresBoard.classList.add('hidden');
-            if (flightData.arrivals) {
-                updateTable(arrivalsTbody, flightData.arrivals, 'arrival');
-            }
-        } else {
+            if (flightData.arrivals) updateTable(arrivalsTbody, flightData.arrivals, 'arrival');
+            manageScrolling();
+        } else if (currentView === 'departures') {
             boardTitle.textContent = 'DEPARTURES';
             departuresBoard.classList.remove('hidden');
-            arrivalsBoard.classList.add('hidden');
-            if (flightData.departures) {
-                updateTable(departuresTbody, flightData.departures, 'departure');
-            }
+            if (flightData.departures) updateTable(departuresTbody, flightData.departures, 'departure');
+            manageScrolling();
+        } else { // weather
+            boardTitle.textContent = 'LOCAL RADAR';
+            weatherBoard.classList.remove('hidden');
+            viewSwitchTimeout = setTimeout(switchView, 30000); // Show weather for 30 seconds
         }
-        manageScrolling();
+    }
+
+    function fetchAndStoreFlightData() {
+        if (!flightData.arrivals) { loader.style.display = 'block'; }
+        fetch('/api/flights')
+            .then(response => response.json())
+            .then(data => {
+                loader.style.display = 'none';
+                if (data.message || data.error) {
+                    const message = data.message || data.error;
+                    boardTitle.textContent = message;
+                    arrivalsTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">-</td></tr>`;
+                    departuresTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">-</td></tr>`;
+                    if (currentView !== 'weather') {
+                        viewSwitchTimeout = setTimeout(switchView, 30000);
+                    }
+                    return;
+                }
+                flightData = data;
+                if (!document.querySelector('#arrivals-table tbody').innerHTML) {
+                     updateDisplay();
+                }
+            })
+            .catch(error => {
+                loader.style.display = 'none';
+                console.error('Fetch error:', error);
+            });
+    }
+
+    function switchView() {
+        if (currentView === 'arrivals') {
+            currentView = 'departures';
+        } else if (currentView === 'departures') {
+            currentView = 'weather';
+        } else {
+            currentView = 'arrivals';
+        }
+        updateDisplay();
     }
 
     updateClock();
     setInterval(updateClock, 1000);
-    fetchAndStoreFlightData(); // Initial fetch
-    setInterval(fetchAndStoreFlightData, 300000); // Check for new data every 5 minutes
+    fetchWeather();
+    setInterval(fetchWeather, REFRESH_INTERVAL);
+    fetchAndStoreFlightData();
+    setInterval(fetchAndStoreFlightData, REFRESH_INTERVAL);
 });
