@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    container_name: kasg-flights
+    ports:
+      - "8080:5000"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - AERO_API_KEY=${AERO_API_KEY}
+    volumes:
+      - .:/app

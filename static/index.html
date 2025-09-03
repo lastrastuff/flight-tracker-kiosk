@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Springdale (KASG) Flight Board</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <h1 id="board-title">ARRIVALS</h1>
+            <p class="status-text">SPRINGDALE AIRPORT (KASG) ✈️ | <span id="current-time"></span></p>
+        </header>
+
+        <div id="loader" class="loader"></div>
+        
+        <main class="flight-boards">
+            <div id="arrivals-board" class="board">
+                <table id="arrivals-table">
+                    <thead>
+                        <tr>
+                            <th>Flight</th>
+                            <th>Origin</th>
+                            <th>Aircraft</th>
+                            <th>Status</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="departures-board" class="board hidden">
+                <table id="departures-table">
+                    <thead>
+                        <tr>
+                            <th>Flight</th>
+                            <th>Destination</th>
+                            <th>Aircraft</th>
+                            <th>Status</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+    <script src="/js/main.js"></script>
+</body>
+</html>
