@@ -9,12 +9,7 @@ from flask_caching import Cache
 
 # --- App and Cache Configuration ---
 load_dotenv()
-
-config = {
-    "CACHE_TYPE": "SimpleCache",
-    "CACHE_DEFAULT_TIMEOUT": 1800
-}
-
+config = {"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 1800}
 app = Flask(__name__, static_folder='static', static_url_path='')
 app.config.from_mapping(config)
 cache = Cache(app)
@@ -23,49 +18,31 @@ cache = Cache(app)
 AERO_API_URL = "https://aeroapi.flightaware.com/aeroapi"
 AERO_API_KEY = os.getenv("AERO_API_KEY")
 AIRPORT_CODE = "KASG"
+# Hard-coded coordinates for KASG to reduce FlightAware API calls
+AIRPORT_LAT = 36.17473947369698
+AIRPORT_LON = -94.12315969007389
 
 # --- Helper Functions ---
 def is_airport_open():
-    """Checks if the airport is within operating hours in its local timezone."""
     tz = pytz.timezone('America/Chicago')
     now = datetime.datetime.now(tz)
-    weekday = now.weekday()  # Monday is 0, Sunday is 6
-    hour = now.hour
+    weekday, hour = now.weekday(), now.hour
+    return (6 <= hour < 21) if 0 <= weekday <= 4 else (7 <= hour < 19)
 
-    if 0 <= weekday <= 4:  # Monday - Friday
-        return 6 <= hour < 21  # 6:00 AM to 8:59 PM
-    else:  # Saturday - Sunday
-        return 7 <= hour < 19  # 7:00 AM to 6:59 PM
-
-@cache.memoize()
+@cache.memoize(timeout=1800)
 def fetch_flightaware_data():
-    """Makes the actual API calls. The @cache.memoize decorator ensures this
-    function only runs if the result is not already in the cache."""
     headers = {"x-apikey": AERO_API_KEY}
     params = {"max_pages": 1}
-    flights_data = {"arrivals": [], "departures": []}
-
-    # --- Arrivals ---
-    arrivals_url = f"{AERO_API_URL}/airports/{AIRPORT_CODE}/flights/arrivals"
-    arrivals_resp = requests.get(arrivals_url, headers=headers, params=params, timeout=10)
-    arrivals_resp.raise_for_status()
-    arrivals = arrivals_resp.json().get("arrivals", [])
-
-    # --- Departures ---
-    departures_url = f"{AERO_API_URL}/airports/{AIRPORT_CODE}/flights/departures"
-    departures_resp = requests.get(departures_url, headers=headers, params=params, timeout=10)
-    departures_resp.raise_for_status()
-    departures = departures_resp.json().get("departures", [])
-
-    # Format data
-    flights_data["arrivals"] = [
-        {"ident": f.get("ident"), "origin": (f.get("origin") or {}).get("code_icao", "N/A"), "aircraft_type": f.get("aircraft_type", "N/A"), "status": f.get("status"), "time": f.get("actual_on") or f.get("estimated_on") or f.get("scheduled_on")}
-        for f in arrivals[:15] if f
-    ]
-    flights_data["departures"] = [
-        {"ident": f.get("ident"), "destination": (f.get("destination") or {}).get("code_icao", "N/A"), "aircraft_type": f.get("aircraft_type", "N/A"), "status": f.get("status"), "time": f.get("actual_off") or f.get("estimated_off") or f.get("scheduled_off")}
-        for f in departures[:15] if f
-    ]
+    flights_url = f"{AERO_API_URL}/airports/{AIRPORT_CODE}/flights"
+    resp = requests.get(flights_url, headers=headers, params=params, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    arrivals = data.get("arrivals", [])
+    departures = data.get("departures", [])
+    flights_data = {
+        "arrivals": [{"ident": f.get("ident"), "origin": (f.get("origin") or {}).get("code_icao", "N/A"), "aircraft_type": f.get("aircraft_type", "N/A"), "status": f.get("status"), "time": f.get("actual_on") or f.get("estimated_on") or f.get("scheduled_on")} for f in arrivals[:15] if f],
+        "departures": [{"ident": f.get("ident"), "destination": (f.get("destination") or {}).get("code_icao", "N/A"), "aircraft_type": f.get("aircraft_type", "N/A"), "status": f.get("status"), "time": f.get("actual_off") or f.get("estimated_off") or f.get("scheduled_off")} for f in departures[:15] if f]
+    }
     return flights_data
 
 # --- Routes ---
@@ -76,39 +53,67 @@ def index():
 @app.route('/api/flights')
 def get_flights():
     if not is_airport_open():
-        cache.clear()  # Clear cache so we get fresh data when airport re-opens
-        return jsonify({
-            "arrivals": [],
-            "departures": [],
-            "message": "AIRPORT IS CURRENTLY CLOSED"
-        })
-    
+        cache.clear()
+        return jsonify({"message": "AIRPORT IS CURRENTLY CLOSED"})
     try:
         data = fetch_flightaware_data()
         return jsonify(data)
     except requests.exceptions.RequestException as e:
         return jsonify({"error": f"API request failed: {e}"}), 500
+
 @app.route('/api/weather')
-@cache.memoize(timeout=600) # Cache weather for 10 minutes
+@cache.memoize(timeout=600)
 def get_weather():
-    """Fetches simple weather data for the airport."""
+    """Fetches weather from the NWS using hard-coded airport coordinates."""
+    if not is_airport_open():
+        return jsonify({"error": "Airport is closed"}), 400
     try:
-        url = f"{AERO_API_URL}/airports/{AIRPORT_CODE}/weather/observations"
-        headers = {"x-apikey": AERO_API_KEY}
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        data = resp.json().get("observations", [])
-        if not data:
-            return jsonify({"error": "No weather data available"}), 404
+        # Use hard-coded coordinates instead of FlightAware API call
+        lat, lon = AIRPORT_LAT, AIRPORT_LON
         
-        # Extract the most recent observation
-        current_weather = data[0]
+        # Step 1: Use coordinates to find the nearest NWS station grid
+        nws_headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        points_url = f"https://api.weather.gov/points/{lat},{lon}"
+        points_resp = requests.get(points_url, headers=nws_headers, timeout=10)
+        points_resp.raise_for_status()
+        
+        # Step 2: Get the URL for the list of nearby stations
+        observation_stations_url = points_resp.json().get("properties", {}).get("observationStations")
+        if not observation_stations_url:
+            return jsonify({"error": "NWS grid did not return stations URL"}), 500
+
+        # Step 3: Get the list of stations and pick the first one's ID
+        stations_resp = requests.get(observation_stations_url, headers=nws_headers, timeout=10)
+        stations_resp.raise_for_status()
+        features = stations_resp.json().get("features", [])
+        if not features:
+            return jsonify({"error": "NWS did not find nearby stations"}), 500
+        
+        closest_station_id = features[0].get("properties", {}).get("stationIdentifier")
+        if not closest_station_id:
+            return jsonify({"error": "Closest station has no ID"}), 500
+        
+        # Step 4: Build the final URL for the latest observation and fetch it
+        latest_obs_url = f"https://api.weather.gov/stations/{closest_station_id}/observations/latest"
+        final_weather_resp = requests.get(latest_obs_url, headers=nws_headers, timeout=10)
+        final_weather_resp.raise_for_status()
+        data = final_weather_resp.json().get("properties", {})
+        
+        temp_c = data.get("temperature", {}).get("value")
+        wind_kmh = data.get("windSpeed", {}).get("value")
+        summary = data.get("textDescription", "")  # Get the weather summary
+
+        if temp_c is None or wind_kmh is None:
+            return jsonify({"error": "NWS weather data incomplete"}), 404
+
+        wind_mph = round(wind_kmh * 0.621371)
         weather_info = {
-            "temp": current_weather.get("temp_air"),
-            "wind_speed": current_weather.get("wind_speed"),
-            "summary": current_weather.get("sky_cover_text", "")
+            "temp": temp_c,
+            "wind_speed": wind_mph,
+            "summary": summary  # Add the summary to the response
         }
         return jsonify(weather_info)
+        
     except requests.exceptions.RequestException:
         return jsonify({"error": "Failed to fetch weather"}), 500
 

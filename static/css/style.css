@@ -97,21 +97,37 @@ td span {
 
 /* --- ARRIVALS Color Scheme (Greens/Blues) --- */
 #arrivals-board .status-arrived span, 
-#arrivals-board .status-landed span { background-color: #1b5e20; } /* Green */
+#arrivals-board .status-landed span { 
+    background-color: #1b5e20; /* Green */ 
+}
 
 #arrivals-board .status-en-route span, 
-#arrivals-board .status-eta span { background-color: #0d47a1; } /* Blue */
+#arrivals-board .status-eta span { 
+    background-color: #0d47a1; /* Blue */ 
+}
 
 /* --- DEPARTURES Color Scheme (Yellows/Teals) --- */
 #departures-board .status-arrived span, 
-#departures-board .status-landed span { background-color: #f57f17; } /* Yellow/Gold */
+#departures-board .status-landed span { 
+    background-color: #f57f17; /* Yellow/Gold */ 
+}
 
-#departures-board .status-en-route span { background-color: #0d6986; } /* Muted Teal */
+#departures-board .status-en-route span { 
+    background-color: #0d6986; /* Muted Teal */ 
+}
 
 /* --- SHARED Color Scheme (Reds/Greys) --- */
-.status-delayed span { background-color: #b45309; } /* Muted Amber */
-.status-cancelled span { background-color: #b71c1c; }
-.status-scheduled span { background-color: #424242; }
+.status-delayed span { 
+    background-color: #b45309; /* Muted Amber */ 
+}
+
+.status-cancelled span { 
+    background-color: #b71c1c; 
+}
+
+.status-scheduled span { 
+    background-color: #424242; 
+}
 
 .loader {
     border: 5px solid #424242;
@@ -123,7 +139,17 @@ td span {
     margin: 20px auto;
 }
 
+/* Missing keyframe animation for the loader */
+@keyframes spin {
+    0% { 
+        transform: rotate(0deg); 
+    }
+    100% { 
+        transform: rotate(360deg); 
+    }
+}
+
 /* Hide scrollbar for Chrome, Safari, and Edge */
 .flight-boards::-webkit-scrollbar {
-  display: none;
+    display: none;
 }
