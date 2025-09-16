@@ -1,6 +1,4 @@
-/* Import a monospace font from Google Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@500&display=swap');
-
 body {
     font-family: 'Roboto Mono', monospace;
     background-color: #1a1a1a;
@@ -9,7 +7,6 @@ body {
     text-transform: uppercase;
     overflow: hidden;
 }
-
 .container {
     width: 100%;
     height: 100vh;
@@ -18,12 +15,10 @@ body {
     display: flex;
     flex-direction: column;
 }
-
 .page-header {
     flex-shrink: 0;
     padding-bottom: 10px;
 }
-
 h1 {
     text-align: center;
     color: #e0e0e0;
@@ -32,38 +27,32 @@ h1 {
     font-size: 60px;
     margin: 0;
 }
-
 .status-text {
     text-align: center;
     font-size: 30px;
     color: #888;
     margin-bottom: 20px;
 }
-
 .flight-boards {
     position: relative;
     flex-grow: 1;
     overflow-y: auto;
-    scrollbar-width: none; /* Hide scrollbar for Firefox */
+    scrollbar-width: none;
 }
-
 .board {
     width: 100%;
     height: 100%;
 }
-
 table {
     width: 100%;
     border-collapse: collapse;
 }
-
 th, td {
     padding: 15px 10px;
     text-align: left;
     vertical-align: middle;
     border-bottom: 2px dashed #444;
 }
-
 th {
     color: #aaa;
     font-weight: 500;
@@ -72,13 +61,11 @@ th {
     top: 0;
     background-color: #1a1a1a;
 }
-
 td {
     white-space: nowrap;
     letter-spacing: 1px;
     font-size: 42px;
 }
-
 td span {
     background-color: #2c2c2c;
     color: #fafafa;
@@ -90,20 +77,24 @@ td span {
     min-width: 1ch;
     text-align: center;
 }
-
 .hidden {
     display: none;
 }
 
-/* --- ARRIVALS Color Scheme (Greens/Blues) --- */
-#arrivals-board .status-arrived span, 
-#arrivals-board .status-landed span { 
-    background-color: #1b5e20; /* Green */ 
+/* --- PLANNED/SCHEDULED Status (GREEN) - Override all other colors --- */
+.status-planned span,
+.status-scheduled span,
+.status-sched span,
+.status-future span {
+    background-color: #2e7d32 !important; /* Green for planned flights */
 }
 
+/* --- ARRIVALS Color Scheme (Greens) --- */
+#arrivals-board .status-arrived span, 
+#arrivals-board .status-landed span,
 #arrivals-board .status-en-route span, 
 #arrivals-board .status-eta span { 
-    background-color: #0d47a1; /* Blue */ 
+    background-color: #1b5e20; /* Green */
 }
 
 /* --- DEPARTURES Color Scheme (Yellows/Teals) --- */
@@ -111,21 +102,18 @@ td span {
 #departures-board .status-landed span { 
     background-color: #f57f17; /* Yellow/Gold */ 
 }
-
 #departures-board .status-en-route span { 
     background-color: #0d6986; /* Muted Teal */ 
 }
 
-/* --- SHARED Color Scheme (Reds/Greys) --- */
+/* --- SHARED Color Scheme --- */
 .status-delayed span { 
-    background-color: #b45309; /* Muted Amber */ 
+    background-color: #b45309; 
 }
-
 .status-cancelled span { 
     background-color: #b71c1c; 
 }
-
-.status-scheduled span { 
+.status-unknown span {
     background-color: #424242; 
 }
 
@@ -138,18 +126,10 @@ td span {
     animation: spin 1s linear infinite;
     margin: 20px auto;
 }
-
-/* Missing keyframe animation for the loader */
 @keyframes spin {
-    0% { 
-        transform: rotate(0deg); 
-    }
-    100% { 
-        transform: rotate(360deg); 
-    }
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
-
-/* Hide scrollbar for Chrome, Safari, and Edge */
 .flight-boards::-webkit-scrollbar {
     display: none;
 }
