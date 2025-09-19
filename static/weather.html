@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Northwest Arkansas Weather - METAR</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300;400;500;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2c2c2c 50%, #1a1a1a 100%);
+            color: #f0f0f0;
+            overflow: hidden;
+            height: 100vh;
+            text-transform: uppercase;
+        }
+        
+        .weather-container {
+            position: relative;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 30px;
+        }
+        
+        .main-content {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            gap: 40px;
+            align-items: center;
+            min-height: 0;
+        }
+        
+        .metar-display, .forecast {
+            background: rgba(44, 44, 44, 0.9);
+            border-radius: 25px;
+            padding: 35px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .station-header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 20px;
+        }
+        
+        .station-id {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #fafafa;
+            letter-spacing: 3px;
+            text-shadow: 0 0 20px rgba(250, 250, 250, 0.3);
+            margin-bottom: 8px;
+        }
+        
+        .station-name {
+            font-size: 1.1rem;
+            color: #aaa;
+            letter-spacing: 2px;
+            font-weight: 400;
+        }
+        
+        .metar-section {
+            margin: 25px 0;
+            padding: 20px;
+            background: rgba(26, 26, 26, 0.4);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.2s ease;
+        }
+        
+        .metar-section:hover {
+            background: rgba(26, 26, 26, 0.6);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .metar-label {
+            font-size: 0.9rem;
+            color: #888;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+        }
+        
+        .metar-value {
+            font-size: 1.4rem;
+            color: #fafafa;
+            font-weight: 600;
+            letter-spacing: 2px;
+        }
+        
+        .metar-raw {
+            background: rgba(26, 26, 26, 0.6);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            font-size: 0.95rem;
+            color: #e0e0e0;
+            letter-spacing: 1px;
+            line-height: 1.4;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            word-break: break-all;
+        }
+        
+        .wind-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .wind-item {
+            text-align: center;
+        }
+        
+        .conditions-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .condition-item {
+            text-align: center;
+            padding: 15px;
+            background: rgba(26, 26, 26, 0.3);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .radar-container {
+            position: relative;
+            background: rgba(44, 44, 44, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 25px;
+            overflow: hidden;
+            height: 100%;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+            border-radius: 15px;
+            background: #1a1a1a;
+            flex-grow: 1;
+            z-index: 1;
+        }
+        
+        .radar-title {
+            position: absolute;
+            top: 25px;
+            left: 25px;
+            font-size: 1.3rem;
+            font-weight: 500;
+            z-index: 1000;
+            color: #e0e0e0;
+            letter-spacing: 2px;
+            text-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
+            pointer-events: none;
+            background: rgba(26, 26, 26, 0.8);
+            padding: 8px 15px;
+            border-radius: 20px;
+        }
+
+        .forecast-title {
+            font-size: 1.8rem;
+            margin-bottom: 30px;
+            text-align: center;
+            letter-spacing: 3px;
+            color: #e0e0e0;
+            font-weight: 600;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .forecast-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 1.2rem;
+            letter-spacing: 1px;
+            transition: all 0.2s ease;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .forecast-item:hover {
+            background: rgba(255, 255, 255, 0.02);
+            padding-left: 10px;
+            border-radius: 8px;
+        }
+        
+        .forecast-item:last-child {
+            border-bottom: none;
+        }
+        
+        .forecast-day {
+            flex-grow: 1;
+            text-align: left;
+            font-weight: 500;
+            color: #aaa;
+        }
+        
+        .forecast-icon {
+            font-size: 1.5rem;
+            line-height: 1;
+        }
+        
+        .forecast-temp {
+            flex-grow: 1;
+            text-align: right;
+            font-weight: 600;
+            color: #fafafa;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-size: 1.8rem;
+            color: #888;
+            letter-spacing: 2px;
+            animation: pulse 2s infinite;
+            z-index: 4;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        
+        .update-time {
+            position: absolute;
+            bottom: 25px;
+            right: 25px;
+            font-size: 1rem;
+            color: #888;
+            letter-spacing: 1px;
+            background: rgba(26, 26, 26, 0.8);
+            padding: 8px 15px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            z-index: 1000;
+        }
+
+        .pulsing-marker {
+            position: relative;
+        }
+
+        .pulse-ring {
+           display: none;
+        }
+
+        .pulse-dot {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 14px;
+            height: 14px;
+            background: #ff6b6b;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            animation: simple-pulse 2.5s ease-in-out infinite;
+        }
+
+        @keyframes simple-pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+        
+        .weather-container, .metar-display, .radar-container, .metar-section, .radar-title, .update-time {
+            backdrop-filter: none;
+            box-shadow: none;
+        }
+
+        .vfr-status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            letter-spacing: 2px;
+            margin-top: 10px;
+        }
+        
+        .vfr { background: #28a745; color: white; }
+        .mvfr { background: #007bff; color: white; }
+        .ifr { background: #dc3545; color: white; }
+        .lifr { background: #6f42c1; color: white; }
+    </style>
+</head>
+<body>
+    <div class="weather-container">
+        
+        <div class="main-content">
+            <div class="metar-display">
+                <div class="station-header">
+                    <div class="station-id" id="station-id">KASG</div>
+                    <div class="station-name">Springdale Municipal Airport</div>
+                    <div class="vfr-status" id="flight-category">N/A</div>
+                </div>
+                <div class="metar-section">
+                    <div class="metar-label">Raw METAR</div>
+                    <div class="metar-raw" id="raw-metar">Loading METAR...</div>
+                </div>
+                <div class="metar-section">
+                    <div class="wind-section">
+                        <div class="wind-item">
+                            <div class="metar-label">Wind Direction</div>
+                            <div class="metar-value" id="wind-direction">---</div>
+                        </div>
+                        <div class="wind-item">
+                            <div class="metar-label">Wind Speed</div>
+                            <div class="metar-value" id="wind-speed">-- KT</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="metar-section">
+                    <div class="conditions-grid">
+                        <div class="condition-item">
+                            <div class="metar-label">Visibility</div>
+                            <div class="metar-value" id="visibility">-- SM</div>
+                        </div>
+                        <div class="condition-item">
+                            <div class="metar-label">Ceiling</div>
+                            <div class="metar-value" id="ceiling">---</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="metar-section">
+                    <div class="conditions-grid">
+                        <div class="condition-item">
+                            <div class="metar-label">Temperature</div>
+                            <div class="metar-value" id="temperature">--°C</div>
+                        </div>
+                        <div class="condition-item">
+                            <div class="metar-label">Dewpoint</div>
+                            <div class="metar-value" id="dewpoint">--°C</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="metar-section">
+                    <div class="metar-label">Altimeter</div>
+                    <div class="metar-value" id="altimeter">--.-- inHg</div>
+                </div>
+            </div>
+            
+            <div class="radar-container">
+                <div class="radar-title">Live Radar</div>
+                <div id="map"></div>
+                <div class="update-time" id="update-info">Loading...</div>
+            </div>
+            
+            <div class="forecast">
+                <div class="forecast-title">5-Day Forecast</div>
+                <div id="forecast-container">
+                    <div class="loading">Loading forecast...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        const nwsHeaders = { 'User-Agent': 'NWA-Weather-Dashboard (Personal Pi Project)' };
+        const weatherIcons = { 'clear':'☀️', 'sunny':'☀️', 'partly cloudy':'⛅', 'mostly cloudy':'☁️', 'cloudy':'☁️', 'overcast':'☁️', 'rain':'🌧️', 'showers':'🌦️', 'drizzle':'🌦️', 'storm':'⛈️', 'thunderstorm':'⛈️', 'snow':'❄️', 'sleet':'🌨️', 'fog':'🌫️', 'mist':'🌫️', 'haze':'🌫️' };
+
+        let map, radarLayer;
+
+        function getIconForForecast(forecastString) {
+            if (!forecastString) return '🌥️';
+            const s = forecastString.toLowerCase();
+            for (const [keyword, emoji] of Object.entries(weatherIcons)) { if (s.includes(keyword)) return emoji; }
+            return '🌥️';
+        }
+
+        async function fetchRainViewerTimestamps() {
+            try {
+                const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+                if (!response.ok) throw new Error('RainViewer API fetch failed');
+                const data = await response.json();
+                const frames = [...(data?.radar?.past || []), ...(data?.radar?.nowcast || [])];
+                return frames.length ? frames[frames.length - 1].path : null;
+            } catch (error) { console.error("Could not fetch RainViewer timestamps:", error); return null; }
+        }
+
+        async function initializeMapAndRadar() {
+            const springdaleCoords = [36.1847, -94.1193];
+            map = L.map('map', { zoomControl: false, attributionControl: false, boxZoom: false, doubleClickZoom: false, dragging: false, scrollWheelZoom: false, preferCanvas: true }).setView(springdaleCoords, 9);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { maxZoom: 12, minZoom: 4 }).addTo(map);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', { maxZoom: 12, minZoom: 4, pane: 'markerPane' }).addTo(map);
+            const pulsingIcon = L.divIcon({ className: 'pulsing-marker', html: '<div class="pulse-ring"></div><div class="pulse-dot"></div>', iconSize: [30, 30], iconAnchor: [15, 15] });
+            L.marker(springdaleCoords, { icon: pulsingIcon }).addTo(map);
+            const latestTimestamp = await fetchRainViewerTimestamps();
+            if (latestTimestamp) {
+                const rainViewerUrl = `https://tilecache.rainviewer.com/v2/radar/${latestTimestamp}/512/{z}/{x}/{y}/2/1_1.png`;
+                radarLayer = L.tileLayer(rainViewerUrl, { format: 'image/png', transparent: true, opacity: 0.7, zIndex: 1000 }).addTo(map);
+                updateRadarTimestamp();
+            }
+        }
+
+        function updateRadarTimestamp() {
+            const now = new Date();
+            document.getElementById('update-info').textContent = `Updated: ${now.toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit' })}`;
+        }
+
+        async function refreshRadar() {
+            const latestTimestamp = await fetchRainViewerTimestamps();
+            if (latestTimestamp && radarLayer) {
+                radarLayer.setUrl(`https://tilecache.rainviewer.com/v2/radar/${latestTimestamp}/512/{z}/{x}/{y}/2/1_1.png`);
+                updateRadarTimestamp();
+            }
+        }
+        
+        function parseMetar(rawMetar) {
+            const parsed = { wind: {}, clouds: [], temperature: '--', dewpoint: '--', altimeter: '--' };
+            if (typeof rawMetar !== 'string') return parsed;
+            const parts = rawMetar.trim().split(/\s+/);
+            const tempDewMatch = parts.find(p => /^M?\d{1,2}\/M?\d{1,2}$/.test(p));
+            if (tempDewMatch) {
+                const [temp, dew] = tempDewMatch.split('/');
+                parsed.temperature = temp.replace('M', '-');
+                parsed.dewpoint = dew.replace('M', '-');
+            }
+            const altimeterMatch = parts.find(p => /^A\d{4}$/.test(p));
+            if (altimeterMatch) {
+                parsed.altimeter = (parseInt(altimeterMatch.substring(1)) / 100).toFixed(2);
+            }
+            const wind = parts.find(p => p.endsWith('KT'));
+            if (wind) {
+                const match = wind.match(/^(VRB|\d{3})(\d{2,3})(G(\d{2,3}))?KT$/);
+                if (match) parsed.wind = { direction: match[1], speed: match[2], gusts: match[4] };
+            }
+            const vis = parts.find(p => p.endsWith('SM'));
+            if (vis) parsed.visibility = vis.replace('SM', '');
+            parsed.clouds = parts.filter(p => /^(SKC|CLR|FEW|SCT|BKN|OVC)\d{3}$/.test(p));
+            return parsed;
+        }
+
+        function determineFlightCategory(visibility, ceiling) {
+            const vis = parseFloat(visibility) || 10; // Default to 10+ if parsing fails
+            
+            // Parse ceiling - if "None" or no ceiling, treat as unlimited (no ceiling restriction)
+            let ceilingFt = null;
+            if (ceiling && ceiling !== 'None' && ceiling.includes('FT')) {
+                ceilingFt = parseInt(ceiling.replace(' FT', ''));
+            }
+            
+            // LIFR: Visibility < 1 SM OR Ceiling < 500 ft
+            if (vis < 1 || (ceilingFt !== null && ceilingFt < 500)) return 'LIFR';
+            
+            // IFR: Visibility 1-2 SM OR Ceiling 500-999 ft  
+            if (vis < 3 || (ceilingFt !== null && ceilingFt < 1000)) return 'IFR';
+            
+            // MVFR: Visibility 3-5 SM OR Ceiling 1000-3000 ft
+            if (vis <= 5 || (ceilingFt !== null && ceilingFt <= 3000)) return 'MVFR';
+            
+            // VFR: Visibility > 5 SM AND Ceiling > 3000 ft (or no ceiling)
+            return 'VFR';
+        }
+
+        function resetMetarDisplayOnError() {
+            document.getElementById('raw-metar').textContent = 'METAR Data Unavailable';
+            document.getElementById('wind-direction').textContent = '---';
+            document.getElementById('wind-speed').textContent = '-- KT';
+            document.getElementById('visibility').textContent = '-- SM';
+            document.getElementById('ceiling').textContent = '---';
+            document.getElementById('temperature').textContent = '--°C';
+            document.getElementById('dewpoint').textContent = '--°C';
+            document.getElementById('altimeter').textContent = '--.-- inHg';
+            const cat = document.getElementById('flight-category');
+            cat.textContent = 'N/A';
+            cat.className = 'vfr-status';
+        }
+
+        async function fetchCurrentConditions() {
+            try {
+                const response = await fetch('https://api.weather.gov/stations/KASG/observations/latest', { headers: nwsHeaders });
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data?.properties) { updateMetarDisplay(data.properties); return; }
+                }
+            } catch (e) { console.warn("NWS API failed:", e); }
+
+            try {
+                const response = await fetch('https://aviationweather.gov/api/data/metar?ids=KASG&format=json&hours=2');
+                 if (response.ok) {
+                    const data = await response.json();
+                    const metar = Array.isArray(data) && data.length > 0 ? data[0] : null;
+                    if (metar) {
+                        const adaptedData = {
+                            rawMessage: metar.raw_text,
+                            temperature: { value: metar.temp_c },
+                            dewpoint: { value: metar.dewpoint_c },
+                            altimeter: { value: metar.altim_in_hg },
+                            visibility: { value: metar.vis_stat_mi * 1609.34 }
+                        };
+                        updateMetarDisplay(adaptedData);
+                        return;
+                    }
+                }
+            } catch (e) { console.warn("AviationWeather API failed:", e); }
+            
+            resetMetarDisplayOnError();
+        }
+
+        function updateMetarDisplay(data) {
+            const rawMetar = data.rawMessage || 'No METAR available';
+            document.getElementById('raw-metar').textContent = rawMetar;
+            
+            const parsed = parseMetar(rawMetar);
+
+            const windSpeedInt = parseInt(parsed.wind.speed);
+            if (isNaN(windSpeedInt) || windSpeedInt === 0) {
+                document.getElementById('wind-direction').textContent = 'CALM';
+                document.getElementById('wind-speed').textContent = '0 KT';
+            } else {
+                document.getElementById('wind-direction').textContent = parsed.wind.direction === 'VRB' ? 'VRB' : `${parsed.wind.direction}°`;
+                document.getElementById('wind-speed').textContent = `${parsed.wind.speed}${parsed.wind.gusts ? `G${parsed.wind.gusts}` : ''} KT`;
+            }
+
+            const tempValue = data.temperature?.value;
+            document.getElementById('temperature').textContent = (tempValue != null) ? `${Math.round(tempValue)}°C` : `${parsed.temperature}°C`;
+
+            let dewpointText = '--°C';
+            const dewpointValue = data.dewpoint?.value;
+            if (dewpointValue != null && !isNaN(dewpointValue)) {
+                dewpointText = `${Math.round(dewpointValue)}°C`;
+            } else if (parsed.dewpoint && parsed.dewpoint !== '--') {
+                dewpointText = `${parsed.dewpoint}°C`;
+            }
+            document.getElementById('dewpoint').textContent = dewpointText;
+
+            let altimeterText = '--.-- inHg';
+            const altimeterValue = data.altimeter?.value;
+            if (altimeterValue != null && !isNaN(altimeterValue)) {
+                altimeterText = altimeterValue > 1000 ? `${(altimeterValue / 3386.39).toFixed(2)} inHg` : `${parseFloat(altimeterValue).toFixed(2)} inHg`;
+            } else if (parsed.altimeter && parsed.altimeter !== '--') {
+                altimeterText = `${parsed.altimeter} inHg`;
+            }
+            document.getElementById('altimeter').textContent = altimeterText;
+            
+            const visSM = (data.visibility?.value != null) ? (data.visibility.value / 1609.34).toFixed(1) : parseFloat(parsed.visibility);
+            let ceilingText = 'None';
+            const ceilingLayer = parsed.clouds.find(c => c.startsWith('BKN') || c.startsWith('OVC'));
+            if (ceilingLayer) { 
+                const heightCode = ceilingLayer.substring(3);
+                ceilingText = `${parseInt(heightCode) * 100} FT`; 
+            }
+            
+            const visibilityText = isNaN(visSM) ? '10+ SM' : `${visSM} SM`;
+            document.getElementById('visibility').textContent = visibilityText;
+            document.getElementById('ceiling').textContent = ceilingText;
+            
+            const cat = document.getElementById('flight-category');
+            const category = determineFlightCategory(visSM, ceilingText);
+            cat.textContent = category;
+            cat.className = `vfr-status ${category.toLowerCase()}`;
+        }
+        
+        async function fetchForecast() {
+            try {
+                const gridResponse = await fetch(`https://api.weather.gov/points/36.1847,-94.1193`, { headers: nwsHeaders });
+                const gridData = await gridResponse.json();
+                const forecastUrl = gridData.properties.forecast;
+                const forecastRes = await fetch(forecastUrl, { headers: nwsHeaders });
+                const forecastData = await forecastRes.json();
+                if (forecastData.properties?.periods) { updateNwsForecast(forecastData.properties.periods); return; }
+            } catch (e) { console.warn("NWS Forecast failed, trying backup:", e); }
+
+            try {
+                const response = await fetch('https://wttr.in/Springdale,AR?format=j1');
+                const data = await response.json();
+                if (data?.weather) { updateSimpleForecast(data.weather); return; }
+            } catch (e) { console.warn("wttr.in forecast failed:", e); }
+        }
+
+        function updateNwsForecast(periods) {
+            const forecastContainer = document.getElementById('forecast-container');
+            forecastContainer.innerHTML = '';
+            const dailyData = {};
+            periods.forEach(period => {
+                const dayKey = new Date(period.startTime).toISOString().split('T')[0];
+                if (!dailyData[dayKey]) {
+                    dailyData[dayKey] = { name: new Date(period.startTime).toLocaleDateString('en-US', { weekday: 'short' }), high: -Infinity, low: Infinity, icon: '' };
+                }
+                dailyData[dayKey].high = Math.max(dailyData[dayKey].high, period.temperature);
+                dailyData[dayKey].low = Math.min(dailyData[dayKey].low, period.temperature);
+                if (period.isDaytime || !dailyData[dayKey].icon) {
+                    dailyData[dayKey].icon = getIconForForecast(period.shortForecast);
+                }
+            });
+
+            let forecastHTML = '';
+            Object.values(dailyData).slice(0, 5).forEach((day, index) => {
+                const displayName = index === 0 ? 'Today' : day.name;
+                forecastHTML += `<div class="forecast-item"><div class="forecast-day">${displayName}</div><div class="forecast-icon">${day.icon}</div><div class="forecast-temp">${day.high}° / ${day.low}°</div></div>`;
+            });
+            forecastContainer.innerHTML = forecastHTML;
+        }
+
+        function updateSimpleForecast(weatherData) {
+            const forecastContainer = document.getElementById('forecast-container');
+            let forecastHTML = '';
+            weatherData.slice(0, 5).forEach((day, index) => {
+                const dayName = index === 0 ? 'Today' : new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' });
+                const icon = getIconForForecast(day.hourly?.[4]?.weatherDesc?.[0]?.value || '');
+                forecastHTML += `<div class="forecast-item"><div class="forecast-day">${dayName}</div><div class="forecast-icon">${icon}</div><div class="forecast-temp">${day.maxtempF}° / ${day.mintempF}°</div></div>`;
+            });
+            forecastContainer.innerHTML = forecastHTML;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeMapAndRadar();
+            fetchCurrentConditions();
+            fetchForecast();
+            setInterval(fetchCurrentConditions, 300000);
+            setInterval(fetchForecast, 1800000);
+            setInterval(refreshRadar, 300000);
+        });
+    </script>
+</body>
+</html>
