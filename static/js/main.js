@@ -3,7 +3,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const loader = document.getElementById('loader');
     const boardTitle = document.getElementById('board-title');
     const currentTimeSpan = document.getElementById('current-time');
-    const weatherSpan = document.getElementById('weather-text');
     const arrivalsBoard = document.getElementById('arrivals-board');
     const departuresBoard = document.getElementById('departures-board');
     const weatherBoard = document.getElementById('weather-board');
@@ -15,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let scrollInterval = null;
     let viewSwitchTimeout = null;
     let isInitialLoad = true;
+    let nextSixAmCheck = null;
     const REFRESH_INTERVAL = 1800000; // 30 minutes
 
     function createFlipText(text = 'N/A') {
@@ -37,25 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function fetchWeather() {
-        fetch('/api/weather')
-            .then(r => r.json())
-            .then(data => {
-                if (data.temp !== undefined && data.wind_speed !== undefined) {
-                    const tempC = parseFloat(data.temp);
-                    const tempF = Math.round((tempC * 9/5) + 32);
-
-                    let weatherEmoji = '☀️';
-                    const summary = (data.summary || "").toLowerCase();
-                    if (summary.includes('cloudy') || summary.includes('overcast')) weatherEmoji = '☁️';
-                    else if (summary.includes('rain') || summary.includes('shower')) weatherEmoji = '🌧️';
-                    else if (summary.includes('storm')) weatherEmoji = '⛈️';
-                    else if (summary.includes('snow')) weatherEmoji = '❄️';
-                    else if (summary.includes('fog') || summary.includes('mist')) weatherEmoji = '🌫️';
-
-                    weatherSpan.textContent = `${tempF}°F ${weatherEmoji} ${data.wind_speed} MPH WIND`;
-                }
-            })
-            .catch(e => console.error("Could not fetch weather:", e));
+        // Weather is now displayed in the weather.html iframe, not in header
+        // This function is no longer needed but kept for compatibility
     }
 
     function updateTable(tbody, flights, type) {
@@ -255,6 +238,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function getNext6AM() {
+        const now = new Date();
+        const next6AM = new Date();
+        next6AM.setHours(6, 0, 0, 0); // Set to 6:00:00 AM today
+        
+        // If it's already past 6 AM today, set for tomorrow
+        if (now >= next6AM) {
+            next6AM.setDate(next6AM.getDate() + 1);
+        }
+        
+        return next6AM;
+    }
+
+    function schedule6AMRefresh() {
+        // Clear existing timeout if any
+        if (nextSixAmCheck) {
+            clearTimeout(nextSixAmCheck);
+        }
+
+        const next6AM = getNext6AM();
+        const timeUntil6AM = next6AM.getTime() - Date.now();
+
+        console.log(`Next 6 AM refresh scheduled for: ${next6AM.toLocaleString()}`);
+        
+        nextSixAmCheck = setTimeout(() => {
+            console.log('6 AM refresh triggered - forcing flight data update');
+            fetchAndStoreFlightData();
+            // Schedule the next 6 AM refresh (24 hours from now)
+            schedule6AMRefresh();
+        }, timeUntil6AM);
+    }
+
     function fetchAndStoreFlightData() {
         if (isInitialLoad) loader.style.display = 'block';
 
@@ -297,6 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
     }
 
+    // Initialize everything
     updateClock();
     setInterval(updateClock, 1000);
 
@@ -305,4 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     fetchAndStoreFlightData();
     setInterval(fetchAndStoreFlightData, REFRESH_INTERVAL);
+
+    // Schedule the 6 AM refresh
+    schedule6AMRefresh();
 });
