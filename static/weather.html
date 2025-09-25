@@ -213,19 +213,21 @@
         }
         
         .forecast-day {
-            flex-grow: 1;
+            flex: 0 0 80px;
             text-align: left;
             font-weight: 500;
             color: #aaa;
         }
         
         .forecast-icon {
+            flex: 0 0 40px;
             font-size: 1.5rem;
             line-height: 1;
+            text-align: center;
         }
         
         .forecast-temp {
-            flex-grow: 1;
+            flex: 1;
             text-align: right;
             font-weight: 600;
             color: #fafafa;
@@ -265,6 +267,7 @@
 
         .pulsing-marker {
             position: relative;
+            z-index: 1001 !important;
         }
 
         .pulse-ring {
@@ -282,6 +285,7 @@
             border-radius: 50%;
             transform: translate(-50%, -50%);
             animation: simple-pulse 2.5s ease-in-out infinite;
+            z-index: 1001 !important;
         }
 
         @keyframes simple-pulse {
@@ -413,7 +417,7 @@
             L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { maxZoom: 12, minZoom: 4 }).addTo(map);
             L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', { maxZoom: 12, minZoom: 4, pane: 'markerPane' }).addTo(map);
             const pulsingIcon = L.divIcon({ className: 'pulsing-marker', html: '<div class="pulse-ring"></div><div class="pulse-dot"></div>', iconSize: [30, 30], iconAnchor: [15, 15] });
-            L.marker(springdaleCoords, { icon: pulsingIcon }).addTo(map);
+            L.marker(springdaleCoords, { icon: pulsingIcon, zIndexOffset: 1000 }).addTo(map);
             const latestTimestamp = await fetchRainViewerTimestamps();
             if (latestTimestamp) {
                 const rainViewerUrl = `https://tilecache.rainviewer.com/v2/radar/${latestTimestamp}/512/{z}/{x}/{y}/2/1_1.png`;
