@@ -8,7 +8,7 @@ from flask_caching import Cache
 
 # --- App and Cache Configuration ---
 load_dotenv()
-config = {"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 1800}
+config = {"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 900} # Cache for 15 mins
 app = Flask(__name__, static_folder='static', static_url_path='')
 app.config.from_mapping(config)
 cache = Cache(app)
@@ -17,8 +17,6 @@ cache = Cache(app)
 AERO_API_URL = "https://aeroapi.flightaware.com/aeroapi"
 AERO_API_KEY = os.getenv("AERO_API_KEY")
 AIRPORT_CODE = "KASG"
-AIRPORT_LAT = 36.17473947369698
-AIRPORT_LON = -94.12315969007389
 
 # --- Helper Functions ---
 def is_airport_open():
@@ -27,169 +25,117 @@ def is_airport_open():
     weekday, hour = now.weekday(), now.hour
     return (6 <= hour < 21) if 0 <= weekday <= 4 else (7 <= hour < 19)
 
-def filter_duplicate_flights(flights):
-    """Filters out flights for the same aircraft that are less than 20 minutes apart."""
-    if not flights:
-        return []
-
-    def parse_time(t_str):
-        if not t_str:
-            return None
-        if t_str.endswith('Z'):
-            t_str = t_str[:-1] + '+00:00'
-        try:
-            return datetime.datetime.fromisoformat(t_str)
-        except (ValueError, TypeError):
-            return None
-
-    for flight in flights:
-        flight['parsed_time'] = parse_time(flight.get('time'))
-
-    flights_with_time = [f for f in flights if f['parsed_time']]
-    sorted_flights = sorted(
-        flights_with_time,
-        key=lambda x: (x.get('ident', ''), x['parsed_time']),
-        reverse=True
-    )
-
-    if not sorted_flights:
-        return []
-
-    final_flights = []
-    last_flight_kept = None
-    for flight in sorted_flights:
-        if last_flight_kept is None or flight.get('ident') != last_flight_kept.get('ident'):
-            final_flights.append(flight)
-            last_flight_kept = flight
-            continue
-
-        time_diff = last_flight_kept['parsed_time'] - flight['parsed_time']
-        if time_diff >= datetime.timedelta(minutes=20):
-            final_flights.append(flight)
-            last_flight_kept = flight
-
-    for flight in final_flights:
-        del flight['parsed_time']
-
-    final_flights.sort(key=lambda x: parse_time(x.get('time')), reverse=True)
-    return final_flights
-
-@cache.memoize(timeout=1800)
+@cache.memoize(timeout=600) # Cache API calls for 10 minutes
 def fetch_flightaware_data():
     headers = {"x-apikey": AERO_API_KEY}
-    
     tz = pytz.timezone('America/Chicago')
     now_local = datetime.datetime.now(tz)
-    today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = now_local.replace(hour=23, minute=59, second=59, microsecond=999999)
     
-    all_departures = []
-    all_scheduled_arrivals = []
-    data = {}
-    
-    # 1. Get current/recent departures from the main flights endpoint
-    params = {"max_pages": 2}
-    flights_url = f"{AERO_API_URL}/airports/{AIRPORT_CODE}/flights"
-    try:
-        resp = requests.get(flights_url, headers=headers, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        current_departures = data.get("departures", [])
-        
-        for f in current_departures:
-            if not f: continue
-            flight_time_str = f.get("actual_off") or f.get("estimated_off") or f.get("scheduled_off")
-            if not flight_time_str: continue
-            try:
-                time_str_for_parsing = flight_time_str.replace('Z', '+00:00')
-                flight_dt_utc = datetime.datetime.fromisoformat(time_str_for_parsing)
-                flight_dt_local = flight_dt_utc.astimezone(tz)
-                status = f.get("status", "").lower()
+    departures_list = []
+    processed_idents = set()
 
-                if flight_dt_local.date() == now_local.date() and status not in ["arrived", "landed"]:
-                    all_departures.append({
-                        "ident": f.get("ident"),
-                        "destination": (f.get("destination") or {}).get("code_icao", "N/A"),
-                        "aircraft_type": f.get("aircraft_type", "N/A"),
-                        "status": f.get("status"),
-                        "time": flight_time_str
-                    })
-            except (ValueError, TypeError):
-                continue
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching current flights: {e}")
-    
-    # 2. Get SCHEDULED (future) departures and ADD them to the main departure list
-    scheduled_params = {
-        "start": today_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "end": today_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "max_pages": 2
-    }
-    scheduled_url = f"{AERO_API_URL}/airports/{AIRPORT_CODE}/flights/scheduled_departures"
+    # --- DEPARTURES ---
+    # STEP 1: Get ACTIVE flights first.
     try:
-        scheduled_resp = requests.get(scheduled_url, headers=headers, params=scheduled_params, timeout=10)
-        scheduled_resp.raise_for_status()
-        scheduled_data = scheduled_resp.json()
-        
+        flights_url = f"{AERO_API_URL}/airports/{AIRPORT_CODE}/flights"
+        resp = requests.get(flights_url, headers=headers, params={"max_pages": 2}, timeout=15)
+        resp.raise_for_status()
+        active_data = resp.json()
+
+        for f in active_data.get("departures", []):
+            status = (f.get("status") or "").lower()
+            
+            if "arrived" not in status and "landed" not in status and "estimated" not in status:
+                flight_ident = f.get("ident")
+                if flight_ident:
+                    time_val = (
+                        f.get("actual_out") or f.get("estimated_out") or f.get("scheduled_out") or
+                        f.get("actual_off") or f.get("estimated_off") or f.get("scheduled_off")
+                    )
+                    if not time_val: continue
+
+                    try:
+                        flight_dt_utc = datetime.datetime.fromisoformat(time_val.replace('Z', '+00:00'))
+                        flight_dt_local = flight_dt_utc.astimezone(tz)
+
+                        # *** FINAL TWEAK: Ensure the flight is for today's calendar date ***
+                        if flight_dt_local.date() == now_local.date():
+                            departures_list.append({
+                                "ident": flight_ident,
+                                "destination": (f.get("destination") or {}).get("code_icao", "N/A"),
+                                "aircraft_type": f.get("aircraft_type", "N/A"),
+                                "status": f.get("status", "En Route"),
+                                "time": time_val
+                            })
+                            processed_idents.add(flight_ident)
+                    except (ValueError, TypeError):
+                        continue
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching active flights: {e}")
+
+    # STEP 2: Get SCHEDULED flights and add any that we missed.
+    try:
+        scheduled_url = f"{AERO_API_URL}/airports/{AIRPORT_CODE}/flights/scheduled_departures"
+        resp = requests.get(scheduled_url, headers=headers, params={"max_pages": 2}, timeout=15)
+        resp.raise_for_status()
+        scheduled_data = resp.json()
+
         for f in scheduled_data.get("scheduled_departures", []):
-            if not f: continue
-            flight_time_str = f.get("scheduled_off")
-            if not flight_time_str: continue
-            try:
-                time_str_for_parsing = flight_time_str.replace('Z', '+00:00')
-                flight_dt_utc = datetime.datetime.fromisoformat(time_str_for_parsing)
-                flight_dt_local = flight_dt_utc.astimezone(tz)
+            flight_ident = f.get("ident")
+            if flight_ident and flight_ident not in processed_idents:
+                time_val = f.get("scheduled_off")
+                if not time_val: continue
                 
-                if flight_dt_local >= now_local:
-                    scheduled_flight = {
-                        "ident": f.get("ident"),
-                        "destination": (f.get("destination") or {}).get("code_icao", "N/A"),
-                        "aircraft_type": f.get("aircraft_type", "N/A"),
-                        "status": "PLANNED",
-                        "time": flight_time_str
-                    }
-                    # *** CHANGE: Add scheduled flights to the main departures list ***
-                    all_departures.append(scheduled_flight)
-            except (ValueError, TypeError):
-                continue
+                try:
+                    flight_dt_utc = datetime.datetime.fromisoformat(time_val.replace('Z', '+00:00'))
+                    flight_dt_local = flight_dt_utc.astimezone(tz)
+
+                    # *** FINAL TWEAK: Ensure the flight is for today's calendar date ***
+                    if flight_dt_local.date() == now_local.date():
+                        departures_list.append({
+                            "ident": flight_ident,
+                            "destination": (f.get("destination") or {}).get("code_icao", "N/A"),
+                            "aircraft_type": f.get("aircraft_type", "N/A"),
+                            "status": "Planned",
+                            "time": time_val
+                        })
+                except (ValueError, TypeError):
+                    continue
     except requests.exceptions.RequestException as e:
         print(f"Error fetching scheduled departures: {e}")
 
-    # 3. Get SCHEDULED (future) arrivals and keep them separate
-    scheduled_arrivals_url = f"{AERO_API_URL}/airports/{AIRPORT_CODE}/flights/scheduled_arrivals"
+    # --- ARRIVALS ---
+    arrivals_list = []
     try:
-        scheduled_arr_resp = requests.get(scheduled_arrivals_url, headers=headers, params=scheduled_params, timeout=10)
-        scheduled_arr_resp.raise_for_status()
-        scheduled_arr_data = scheduled_arr_resp.json()
-        
-        for f in scheduled_arr_data.get("scheduled_arrivals", []):
-            if not f: continue
-            flight_time_str = f.get("scheduled_on") or f.get("scheduled_in")
-            if not flight_time_str: continue
-            try:
-                time_str_for_parsing = flight_time_str.replace('Z', '+00:00')
-                flight_dt_utc = datetime.datetime.fromisoformat(time_str_for_parsing)
-                flight_dt_local = flight_dt_utc.astimezone(tz)
-                
-                if flight_dt_local >= now_local:
-                    all_scheduled_arrivals.append({
-                        "ident": f.get("ident"),
-                        "origin": (f.get("origin") or {}).get("code_icao", "N/A"),
-                        "aircraft_type": f.get("aircraft_type", "N/A"),
-                        "status": "PLANNED",
-                        "time": flight_time_str
-                    })
-            except (ValueError, TypeError):
-                continue
+        arrivals_url = f"{AERO_API_URL}/airports/{AIRPORT_CODE}/flights/scheduled_arrivals"
+        resp = requests.get(arrivals_url, headers=headers, params={"max_pages": 2}, timeout=15)
+        resp.raise_for_status()
+        arrival_data = resp.json()
+        for f in arrival_data.get("scheduled_arrivals", []):
+            flight_time_str = f.get("scheduled_on")
+            if flight_time_str:
+                try:
+                    flight_dt_utc = datetime.datetime.fromisoformat(flight_time_str.replace('Z', '+00:00'))
+                    flight_dt_local = flight_dt_utc.astimezone(tz)
+                    
+                    # *** FINAL TWEAK: Ensure the flight is for today and in the future ***
+                    if flight_dt_local.date() == now_local.date() and flight_dt_local >= now_local:
+                         arrivals_list.append({
+                            "ident": f.get("ident"),
+                            "origin": (f.get("origin") or {}).get("code_icao", "N/A"),
+                            "aircraft_type": f.get("aircraft_type", "N/A"),
+                            "status": "Planned",
+                            "time": flight_time_str
+                        })
+                except (ValueError, TypeError):
+                    continue
     except requests.exceptions.RequestException as e:
         print(f"Error fetching scheduled arrivals: {e}")
-
-    # For simplicity, the unused scheduled_departures and active arrivals keys are removed
-    flights_data = {
-        "departures": filter_duplicate_flights(all_departures)[:15],
-        "scheduled_arrivals": filter_duplicate_flights(all_scheduled_arrivals)[:15]
+    
+    return {
+        "departures": departures_list,
+        "scheduled_arrivals": arrivals_list
     }
-    return flights_data
 
 # --- Routes (No changes below this line) ---
 @app.route('/')
@@ -213,8 +159,8 @@ def get_weather():
     if not is_airport_open():
         return jsonify({"error": "Airport is closed"}), 400
     try:
-        lat, lon = AIRPORT_LAT, AIRPORT_LON
-        nws_headers = {'User-Agent': 'Mozilla/5.0'}
+        lat, lon = 36.1747, -94.1231
+        nws_headers = {'User-Agent': '(My Weather App, myemail@example.com)'}
         points_url = f"https://api.weather.gov/points/{lat},{lon}"
         points_resp = requests.get(points_url, headers=nws_headers, timeout=10)
         points_resp.raise_for_status()
@@ -226,13 +172,7 @@ def get_weather():
         final_weather_resp = requests.get(latest_obs_url, headers=nws_headers, timeout=10)
         final_weather_resp.raise_for_status()
         data = final_weather_resp.json()["properties"]
-        temp_c = data.get("temperature", {}).get("value")
-        wind_kmh = data.get("windSpeed", {}).get("value")
-        summary = data.get("textDescription", "")
-        if temp_c is None or wind_kmh is None:
-            return jsonify({"error": "NWS weather data incomplete"}), 404
-        wind_mph = round(wind_kmh * 0.621371)
-        return jsonify({"temp": temp_c, "wind_speed": wind_mph, "summary": summary})
+        return jsonify(data)
     except requests.exceptions.RequestException:
         return jsonify({"error": "Failed to fetch weather"}), 500
 
